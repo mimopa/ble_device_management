@@ -30,10 +30,17 @@ exports.statusUpdate = functions.https.onRequest(async (request, response) => {
       var deviceSnapshot = await db.collection('devices').doc(device_id).get();
       var devicesData = deviceSnapshot.data();
       console.log(devicesData);
+      // TODO: デバイスマスタ未登録の対応
+      if (devicesData === null) {
+        errorJson = {
+          error: { message: 'Error device is not registered' },
+        };
+        response.status(400).send(JSON.stringify(errorJson));
+        return '';
+      }
       var area_id = devicesData.area_id;
       var parking_id = devicesData.parking_id;
       var key_id = devicesData.key_id;
-      // console.log(request.body.payload_fields.status);
       // 駐輪機マスタの更新
       // 駐輪機マスタは、デバイスマスタから取得した地域No、駐輪場No、駐輪機Noを特定し、ステータス、解錠キー、バッテリーなどを登録する。
       var parkingRef = db
