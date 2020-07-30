@@ -1,5 +1,8 @@
+require('dotenv').config();
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
+const downlinkRequest = require('request');
+const env = process.env;
 
 admin.initializeApp(functions.config().firebase);
 
@@ -15,8 +18,7 @@ exports.statusUpdate = functions.https.onRequest(async (request, response) => {
       break;
 
     case 'POST':
-      // デバイスIDの取得
-      console.log(request.body);
+      // console.log(request.body);
       if (request.body === null) {
         errorJson = {
           error: { message: 'Error could not get request body' },
@@ -26,11 +28,9 @@ exports.statusUpdate = functions.https.onRequest(async (request, response) => {
       }
       var device_id = request.body.dev_id;
       // デバイスマスタ：devices/
-      // デバイスマスタはデバイスIDと、地域No、駐輪場No、駐輪機Noを紐付けるテーブルで、事前に手動で設定する。
       var deviceSnapshot = await db.collection('devices').doc(device_id).get();
       var devicesData = deviceSnapshot.data();
       console.log(devicesData);
-      // TODO: デバイスマスタ未登録の対応
       if (devicesData === null) {
         errorJson = {
           error: { message: 'Error device is not registered' },
@@ -38,11 +38,10 @@ exports.statusUpdate = functions.https.onRequest(async (request, response) => {
         response.status(400).send(JSON.stringify(errorJson));
         return '';
       }
+      // 鍵データ
       var area_id = devicesData.area_id;
       var parking_id = devicesData.parking_id;
       var key_id = devicesData.key_id;
-      // 駐輪機マスタの更新
-      // 駐輪機マスタは、デバイスマスタから取得した地域No、駐輪場No、駐輪機Noを特定し、ステータス、解錠キー、バッテリーなどを登録する。
       var parkingRef = db
         .collection('area')
         .doc(area_id)
@@ -51,8 +50,6 @@ exports.statusUpdate = functions.https.onRequest(async (request, response) => {
         .collection('keiys')
         .doc(key_id);
       console.log(parkingRef);
-      // status:0（空車）、1（入庫無償）、2（入庫有償）、3（出庫）、4（継続）、5（SPL）、6（入庫準備）、7（故障）
-      // status:1（入庫無償）、2（入庫有償）以外の場合は、open_keyは更新しない
       if (
         request.body.payload_fields.status === 1 ||
         request.body.payload_fields.status === 2
@@ -71,16 +68,38 @@ exports.statusUpdate = functions.https.onRequest(async (request, response) => {
           { merge: true }
         );
       } else {
-        // status:
         await parkingRef.set(
           {
             status: request.body.payload_fields.status.toString(),
             battery: request.body.payload_fields.battery.toString(),
-            // date: admin.firestore.Timestamp.fromDate(new Date()),
           },
           { merge: true }
         );
       }
+
+      // ペイロード作成
+      var options = {
+        uri: env.LORA_URL,
+        headers: {
+          'Content-type': 'application/json',
+        },
+        body: {
+          dev_id: '',
+          port: '',
+          comfirmed: false,
+          payload_field: {
+            ack: 0, // ack
+            free: 10, // 無料時間
+            silly: 30, // いたずら検知時間
+            continujes: 0, // 継続検出時間
+          },
+        },
+      };
+      downlinkRequest.post(options, (error, res, body) => {
+        console.log('レスポンス: ' + body);
+      });
+      // TODO:利用ログの記録
+      // ダウンリンク送信後、レスポンスを返す
       response.status(200).send(JSON.stringify(successJson));
       break;
     default:
