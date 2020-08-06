@@ -18,7 +18,6 @@ exports.statusUpdate = functions.https.onRequest(async (request, response) => {
       break;
 
     case 'POST':
-      // console.log(request.body);
       if (request.body === null) {
         errorJson = {
           error: { message: 'Error could not get request body' },
@@ -26,8 +25,13 @@ exports.statusUpdate = functions.https.onRequest(async (request, response) => {
         response.status(400).send(JSON.stringify(errorJson));
         return '';
       }
+      console.log(request.body.payload_fields);
       var device_id = request.body.dev_id;
       // デバイスマスタ：devices/
+      // ここに時間設定の情報を保持する
+      // free:無償設定時間
+      // silly:いたずら検出時間
+      // continues:継続検出時間
       var deviceSnapshot = await db.collection('devices').doc(device_id).get();
       var devicesData = deviceSnapshot.data();
       console.log(devicesData);
@@ -42,6 +46,9 @@ exports.statusUpdate = functions.https.onRequest(async (request, response) => {
       var area_id = devicesData.area_id;
       var parking_id = devicesData.parking_id;
       var key_id = devicesData.key_id;
+      var free = devicesData.free;
+      var silly = devicesData.silly;
+      var continues = devicesData.continues;
       var parkingRef = db
         .collection('area')
         .doc(area_id)
@@ -83,20 +90,23 @@ exports.statusUpdate = functions.https.onRequest(async (request, response) => {
         headers: {
           'Content-type': 'application/json',
         },
-        body: {
-          dev_id: '',
-          port: '',
+        body: JSON.stringify({
+          dev_id: request.body.dev_id,
+          port: 1,
           comfirmed: false,
-          payload_field: {
+          payload_fields: {
             ack: 0, // ack
             free: 10, // 無料時間
             silly: 30, // いたずら検知時間
-            continujes: 0, // 継続検出時間
+            continues: 0, // 継続検出時間
           },
-        },
+        }),
       };
+      console.log(options);
       downlinkRequest.post(options, (error, res, body) => {
-        console.log('レスポンス: ' + body);
+        console.log(error);
+        console.log(res);
+        console.log(body);
       });
       // TODO:利用ログの記録
       // ダウンリンク送信後、レスポンスを返す
